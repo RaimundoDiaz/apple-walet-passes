@@ -132,3 +132,4 @@ dist
 *.pem
 *.cer
 *.p12
+*.bin

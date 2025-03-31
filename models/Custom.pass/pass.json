@@ -1,0 +1,15 @@
+{
+  "formatVersion" : 1,
+  "passTypeIdentifier" : "pass.com.example.app",
+  "teamIdentifier" : "1ABC123456",
+  "generic" : {
+    "primaryFields" : [
+    ],
+    "secondaryFields" : [
+    ],
+    "auxiliaryFields" : [
+    ],
+    "backFields" : [
+    ]
+  }
+}

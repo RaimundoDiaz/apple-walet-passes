@@ -3,6 +3,7 @@ const { PKPass } = require("passkit-generator");
 const axios = require("axios");
 const fs = require("fs");
 
+
 const PassTypeEnum = {
   STAMPS: "<stamps>",
   POINTS: "<points>",

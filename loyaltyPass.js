@@ -20,11 +20,9 @@ const PassTypeEnum = {
  * @property {string} fullName
  * @property {string} authenticationToken
  * @property {string} passType
- * @property {string} deviceToken
  * @property {string?} backgroundColor
  */
 
-const supportedImageFormats = ["image/png", "image/jpg", "image/jpeg"];
 
 class LoyaltyPass {
   constructor() {
@@ -87,7 +85,7 @@ class LoyaltyPass {
     pass.addBuffer("icon@.png", buffer);
     pass.addBuffer("icon@2x.png", buffer);
 
-    // We set the barcodes and fields of the pass
+    // We set the barcode and fields of the pass
     pass.setBarcodes({
       message: loyaltyPassProperties.qrCodeLink,
       format: "PKBarcodeFormatQR",
@@ -114,8 +112,7 @@ class LoyaltyPass {
       pass.auxiliaryFields.push({
         key: "points",
         label: "",
-        value: "Consulta tus puntos en tienda",
-        // "value": LoyaltyPassProperties.points,
+        "value": LoyaltyPassProperties.points,
         textAlignment: "PKTextAlignmentRight",
       });
     }

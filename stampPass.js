@@ -2,7 +2,6 @@ require("dotenv").config();
 const { PKPass } = require("passkit-generator");
 const axios = require("axios");
 const fs = require("fs");
-const { sendApplePushNotification } = require("./pushNotification");
 
 /**
  * @typedef {object} StampPassProperties
@@ -11,11 +10,8 @@ const { sendApplePushNotification } = require("./pushNotification");
  * @property {string} logoUri
  * @property {string} qrCodeLink
  * @property {string} accountId
- * @property {number} points
  * @property {string} fullName
  * @property {string} authenticationToken
- * @property {string} deviceToken
- * @property {string?} backgroundColor
  * @property {string?} stampImageUri
  */
 

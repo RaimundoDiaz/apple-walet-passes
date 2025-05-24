@@ -43,20 +43,20 @@ class LoyaltyPass {
    * Create a loyalty pass.
    *
    * @param {string} serialNumber - The unique serial number of the pass.
-   * @param {LoyaltyPassProperties} LoyaltyPassProperties - The properties for the loyalty pass to create.
+   * @param {LoyaltyPassProperties} loyaltyPassProperties - The properties for the loyalty pass to create.
    *
    * @returns {Promise<void>}
    */
-  async createPass(serialNumber, LoyaltyPassProperties) {
+  async createPass(serialNumber, loyaltyPassProperties) {
     // First we get the image from the URL
-    const logoResp = await axios.get(LoyaltyPassProperties.logoUri, {
+    const logoResp = await axios.get(loyaltyPassProperties.logoUri, {
       responseType: "arraybuffer",
     });
     // Then we convert the image to a buffer
     const buffer = Buffer.from(logoResp.data, "uft-8");
 
     // We set the background color of the pass
-    const backgroundColor = LoyaltyPassProperties.backgroundColor ?? "#ffffff";
+    const backgroundColor = loyaltyPassProperties.backgroundColor ?? "#ffffff";
 
     // We create the pass from the model
     const pass = await PKPass.from(
@@ -70,13 +70,13 @@ class LoyaltyPass {
         },
       },
       {
-        authenticationToken: LoyaltyPassProperties.authenticationToken,
+        authenticationToken: loyaltyPassProperties.authenticationToken,
         webServiceURL: "https://example.com/passes/",
 
-        organizationName: LoyaltyPassProperties.organizationName,
+        organizationName: loyaltyPassProperties.organizationName,
         serialNumber,
-        description: LoyaltyPassProperties.programName,
-        logoText: LoyaltyPassProperties.organizationName,
+        description: loyaltyPassProperties.programName,
+        logoText: loyaltyPassProperties.organizationName,
         backgroundColor: backgroundColor,
       }
     );
@@ -89,28 +89,28 @@ class LoyaltyPass {
 
     // We set the barcodes and fields of the pass
     pass.setBarcodes({
-      message: LoyaltyPassProperties.qrCodeLink,
+      message: loyaltyPassProperties.qrCodeLink,
       format: "PKBarcodeFormatQR",
       messageEncoding: "iso-8859-1",
-      altText: LoyaltyPassProperties.accountId,
+      altText: loyaltyPassProperties.accountId,
     });
 
     // We set the fields of the pass
     pass.primaryFields.push({
       key: "programName",
-      value: LoyaltyPassProperties.programName,
+      value: loyaltyPassProperties.programName,
     });
     pass.secondaryFields.push({
       key: "fullName",
       label: "",
-      value: LoyaltyPassProperties.fullName,
+      value: loyaltyPassProperties.fullName,
     });
     pass.auxiliaryFields.push({
       key: "accountId",
       label: "",
-      value: LoyaltyPassProperties.accountId,
+      value: loyaltyPassProperties.accountId,
     });
-    if (LoyaltyPassProperties.passType === PassTypeEnum.POINTS) {
+    if (loyaltyPassProperties.passType === PassTypeEnum.POINTS) {
       pass.auxiliaryFields.push({
         key: "points",
         label: "",

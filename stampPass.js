@@ -36,19 +36,19 @@ class StampPass {
    * Create a stamp pass.
    *
    * @param {string} serialNumber - The unique serial number of the pass.
-   * @param {StampPassProperties} StampPassProperties - The properties for the stamp pass to create.
+   * @param {StampPassProperties} stampPassProperties - The properties for the stamp pass to create.
    *
    * @returns {Promise<void>}
    */
-  async createPass(serialNumber, StampPassProperties) {
+  async createPass(serialNumber, stampPassProperties) {
     // First we get the image from the URL
-    const logoResp = await axios.get(StampPassProperties.logoUri, {
+    const logoResp = await axios.get(stampPassProperties.logoUri, {
       responseType: "arraybuffer",
     });
     // Then we convert the image to a buffer
     const buffer = Buffer.from(logoResp.data, "uft-8");
 
-    const stampImageResp = await axios.get(StampPassProperties.stampImageUri, {
+    const stampImageResp = await axios.get(stampPassProperties.stampImageUri, {
       responseType: "arraybuffer",
     });
     const stampBuffer = Buffer.from(stampImageResp.data, "uft-8");
@@ -66,12 +66,12 @@ class StampPass {
       },
       {
         serialNumber,
-        authenticationToken: StampPassProperties.authenticationToken,
+        authenticationToken: stampPassProperties.authenticationToken,
         webServiceURL: process.env.WEB_SERVICE_URL,
 
-        organizationName: StampPassProperties.organizationName,
-        description: StampPassProperties.organizationName,
-        logoText: StampPassProperties.programName,
+        organizationName: stampPassProperties.organizationName,
+        description: stampPassProperties.organizationName,
+        logoText: stampPassProperties.programName,
       }
     );
 
@@ -85,22 +85,22 @@ class StampPass {
 
     // We set the barcodes and fields of the pass
     pass.setBarcodes({
-      message: StampPassProperties.qrCodeLink,
+      message: stampPassProperties.qrCodeLink,
       format: "PKBarcodeFormatQR",
       messageEncoding: "iso-8859-1",
-      altText: StampPassProperties.accountId,
+      altText: stampPassProperties.accountId,
     });
 
     // We set the fields of the pass
     pass.secondaryFields.push({
       key: "fullName",
       label: "Name",
-      value: StampPassProperties.fullName,
+      value: stampPassProperties.fullName,
     });
     pass.secondaryFields.push({
       key: "accountId",
       label: "",
-      value: StampPassProperties.accountId,
+      value: stampPassProperties.accountId,
       textAlignment: "PKTextAlignmentRight",
     });
 

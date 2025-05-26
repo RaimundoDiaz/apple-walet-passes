@@ -74,7 +74,7 @@ Key configuration parameters:
 
 **Important**: Store your certificates securely on your server for pass signing.
 
-You can download pass model templates from the [Apple Developer Portal]() **TODO: ADD LINK**
+You can download pass model templates from the [Apple Developer Portal](https://developer.apple.com/library/archive/documentation/UserExperience/Conceptual/PassKit_PG/index.html#//apple_ref/doc/uid/TP40012195-CH1-SW1). Look for the _"developer downloads area"_ link.
 
 Example pass model (`models/Custom.pass/pass.json`):
 ```json

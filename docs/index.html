@@ -1,0 +1,887 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Building a Web Service for Apple Wallet Passes with Node.js</title>
+  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.24.1/themes/prism-tomorrow.min.css">
+  <link rel="stylesheet"
+    href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.24.1/plugins/toolbar/prism-toolbar.min.css">
+</head>
+
+<body>
+  <nav class="sidebar">
+    <div class="sidebar-content">
+      <h2>Table of Contents</h2>
+      <ul id="toc"></ul>
+    </div>
+  </nav>
+
+  <main class="content">
+    <article>
+      <h1>Building a Web Service for Apple Wallet Passes with Node.js: A Comprehensive Guide</h1>
+
+      <section id="introduction">
+        <h2>Introduction</h2>
+        <p>After spending a couple months of development and research into creating a web service with Node.js for Apple
+          Wallet integration, I noticed a significant gap in available online resources on this topic. This article aims
+          to bridge that gap by providing a comprehensive guide for developers interested in implementing similar
+          services.</p>
+        <p>In this article, I will walk you through the process of creating and updating passes for Apple Wallet,
+          including detailed implementation guides, code examples, and best practices for pass distribution and
+          automatic updates.</p>
+      </section>
+
+      <section id="apple-wallet-integration">
+        <h2>Apple Wallet Integration</h2>
+        <p>The Apple Wallet integration differs significantly from Google's approach. While Google provides a dedicated
+          API for pass creation and updates, Apple's implementation requires you to:</p>
+        <ol>
+          <li>Create passes on your server</li>
+          <li>Maintain a database of registered devices</li>
+          <li>Integrate with Apple Push Notification Service (APNs) for pass updates</li>
+        </ol>
+      </section>
+
+      <section id="prerequisites">
+        <h2>Prerequisites</h2>
+        <p>Before implementing the pass system, you'll need to set up the necessary certificates.</p>
+
+        <h3>Certificate Setup</h3>
+        <p>For detailed certificate creation instructions, I recommend following these resources:</p>
+        <ul>
+          <li><a href="https://github.com/alexandercerutti/passkit-generator/wiki/Generating-Certificates"
+              target="_blank">passkit-generator wiki</a> for certificate generation</li>
+          <li><a href="https://www.youtube.com/watch?v=rJZdPoXHtzI&t" target="_blank">YouTube tutorial</a> on pass
+            creation (focus on the certificate setup section)</li>
+        </ul>
+      </section>
+
+      <section id="required-dependencies">
+        <h2>Required Dependencies</h2>
+        <p>Add the following dependencies to your project:</p>
+        <pre><code class="language-json">{
+  "axios": "^1.7.9",
+  "dotenv": "^16.4.7",
+  "file-system": "^2.2.2",
+  "get-image-colors": "^4.0.1",
+  "jsonwebtoken": "^9.0.2",
+  "passkit-generator": "^3.2.0"
+}</code></pre>
+      </section>
+
+      <section id="pass-creation-process">
+        <h2>Pass Creation Process</h2>
+        <p>The <strong>passkit-generator</strong> library allows you to create passes either from a JSON file or programmatically. I've
+          implemented two models for different pass types, which can be customized based on your requirements.</p>
+
+        <p>Key configuration parameters:</p>
+        <ul>
+          <li><strong>passTypeIdentifier</strong>: Your Apple-registered pass type identifier (must match your distribution
+            certificate)</li>
+          <li><strong>teamIdentifier</strong>: Your Apple Developer Program Team ID</li>
+        </ul>
+
+        <p><strong>Important</strong>: Store your certificates securely on your server for pass signing.</p>
+
+        <p>Example pass model:</p>
+        <pre><code class="language-json"> // models/Custom.pass/pass.json
+{
+  "formatVersion" : 1,
+  "passTypeIdentifier" : "pass.com.example.app",
+  "teamIdentifier" : "1ABC123456",
+  "generic" : {
+    "primaryFields" : [],
+    "secondaryFields" : [],
+    "auxiliaryFields" : [],
+    "backFields" : []
+  }
+}</code></pre>
+
+        <p>Example store card model:</p>
+        <pre><code class="language-json"> // models/StoreCard.pass/pass.json
+{
+  "formatVersion" : 1,
+  "passTypeIdentifier" : "pass.com.example.app",
+  "teamIdentifier" : "1ABC123456",
+  "storeCard" : {
+    "primaryFields" : [],
+    "secondaryFields" : [],
+    "auxiliaryFields" : [],
+    "backFields" : []
+  }
+}</code></pre>
+      </section>
+
+      <section id="implementation-guide">
+        <h2>Implementation Guide</h2>
+        <p>I've defined types for pass properties. In this example, I'll demonstrate a <strong>StampPass</strong> implementation, which
+          includes image support for a loyalty program. You can modify these properties based on your specific
+          requirements.</p>
+
+        <h3>StampPass Properties</h3>
+        <pre><code class="language-javascript">/**
+ * @typedef {object} StampPassProperties
+ * @property {string} programName
+ * @property {string} organizationName
+ * @property {string} logoUri
+ * @property {string} qrCodeLink
+ * @property {string} accountId
+ * @property {string} fullName
+ * @property {string} authenticationToken
+ * @property {string?} stampImageUri
+ */</code></pre>
+
+        <h3>StampPass Class</h3>
+        <pre><code class="language-javascript">class StampPass {
+    constructor() {
+        /**
+         * The certificates used to sign the pass. Environment
+         * variable: PASS_PHRASE.
+         */
+        this.certificates = {
+            wwdr: fs.readFileSync("./.certificates/wwdr.pem"),
+            signerCert: fs.readFileSync("./.certificates/signerCert.pem"),
+            signerKey: fs.readFileSync("./.certificates/signerKey.pem"),
+            signerKeyPassphrase: process.env.PASS_PHRASE,
+        }
+    }
+}</code></pre>
+
+        <h3>Create Pass Method</h3>
+        <pre><code class="language-javascript">/**
+ * Create a pass.
+ *
+ * @param {string} serialNumber Developer-defined unique ID for this pass.
+ * @param {StampPassProperties} stampPassProperties The properties for the pass to create.
+ *
+ * @returns {Promise<void>}
+ */
+async createPass(serialNumber, stampPassProperties) {
+    // First we get the image from the URL
+    const logoResp = await axios.get(
+      stampPassProperties.logoUri,
+      { responseType: "arraybuffer" });
+    // Then we convert the image to a buffer
+    const buffer = Buffer.from(logoResp.data, "uft-8");
+
+    const stampImageResp = await axios.get(
+      stampPassProperties.stampImageUri,
+      { responseType: "arraybuffer" });
+    const stampBuffer = Buffer.from(stampImageResp.data, "uft-8");
+
+    // We create the pass from the model
+    const pass = await PKPass.from(
+      {
+        model: "./models/StoreCard.pass",
+        certificates: {
+          wwdr: this.certificates.wwdr,
+          signerCert: this.certificates.signerCert,
+          signerKey: this.certificates.signerKey,
+          signerKeyPassphrase: this.certificates.signerKeyPassphrase,
+        },
+      },
+      {
+        serialNumber,
+        authenticationToken: stampPassProperties.authenticationToken,
+        webServiceURL: process.env.WEB_SERVICE_URL,
+
+        organizationName: stampPassProperties.organizationName,
+        description: stampPassProperties.organizationName,
+        logoText: stampPassProperties.programName,
+      }
+    );
+
+    // We add the images to the pass
+    pass.addBuffer("logo.png", buffer);
+    pass.addBuffer("logo@2x.png", buffer);
+    pass.addBuffer("icon@.png", buffer);
+    pass.addBuffer("icon@2x.png", buffer);
+    pass.addBuffer("strip.png", stampBuffer);
+    pass.addBuffer("strip@2x.png", stampBuffer);
+
+    // We set the barcode and fields of the pass
+    pass.setBarcodes({
+      "message": stampPassProperties.qrCodeLink,
+      "format": "PKBarcodeFormatQR",
+      "messageEncoding": "iso-8859-1",
+      "altText": stampPassProperties.accountId,
+    });
+
+    // We set the fields of the pass
+    pass.secondaryFields.push({
+      "key": "fullName",
+      "label": "Name",
+      "value": stampPassProperties.fullName,
+    });
+    pass.secondaryFields.push({
+      "key": "accountId",
+      "label": "",
+      "value": stampPassProperties.accountId,
+      "textAlignment": "PKTextAlignmentRight"
+    });
+
+    const bufferPass = pass.getAsBuffer();
+
+    // We can save the pass to the file system
+    fs.writeFileSync("YourPassName.pkpass", bufferPass);
+}</code></pre>
+      </section>
+
+      <section id="usage-example">
+        <h2>Usage Example</h2>
+        <p>Create a <strong>main.js</strong> file to test the implementation:</p>
+        <pre><code class="language-javascript">require('dotenv').config();
+const { LoyaltyPass } = require('./loyaltyPass');
+const { StampPass } = require('./stampPass');
+
+const PassTypeEnum = {
+    LOYALTY: 'loyalty',
+    STAMP: 'stamp'
+};</code></pre>
+      </section>
+
+      <section id="pass-distribution">
+        <h2>Pass Distribution</h2>
+        <p>Once you've created the pass file, you have two main options for distribution:</p>
+        <ol>
+          <li>Email the <strong>.pkpass</strong> file as an attachment</li>
+          <li>Host the file online and share the download link</li>
+        </ol>
+        <p>For production environments, I recommend using a service like Vercel Blob for file hosting. When users access the link on their iOS devices, they'll be prompted to add the pass to their Apple Wallet.</p>
+      </section>
+
+      <section id="setting-up-automatic-updates">
+        <h2>Setting up Automatic Updates</h2>
+        <p>Apple Wallet passes can be automatically updated to reflect changes in loyalty points, stamps, or other information. This requires setting up a web service that communicates with Apple's Push Notification Service (APNs). When a pass is added to Apple Wallet, the device registers with your web service, enabling you to push updates.</p>
+
+        <p>Key components needed:</p>
+        <ul>
+          <li>A web service endpoint to handle device registration/unregistration</li>
+          <li>Apple Push Notification Service (APNS) integration</li>
+          <li>Secure storage for device tokens and pass information</li>
+          <li>Logic to determine when passes need updating</li>
+        </ul>
+
+        <p>The web service should implement the <a href="https://developer.apple.com/documentation/walletpasses/adding-a-web-service-to-update-passes#Server-Configuration" target="_blank">Apples Server Configuration</a> to handle device registration and pass updates properly.</p>
+
+        <h3>Pass Update Mechanism</h3>
+        <p>To implement automatic pass updates, you need to set up a complete web service that handles device registration, pass updates, and push notifications. Here's a comprehensive guide to implementing this system:</p>
+
+        <h4>1. Server Configuration</h4>
+        <p>When a user adds your pass to their Apple Wallet, their device automatically communicates with your web service. This communication is essential for enabling automatic updates. The device registration process relies on three key pieces of information that you provide when creating the pass:</p>
+
+        <ul>
+          <li><strong>serialNumber</strong>: A unique identifier for each pass</li>
+          <li><strong>authenticationToken</strong>: A security token used to authenticate API requests</li>
+          <li><strong>webServiceURL</strong>: The base URL of your server's API endpoints</li>
+        </ul>
+
+        <p>These parameters are configured when creating the pass using the <strong>PKPass.from()</strong> method:</p>
+
+        <pre><code class="language-javascript">async createPass(serialNumber, stampPassProperties) {
+    ...
+    const pass = await PKPass.from(
+      ...
+      {
+        serialNumber,
+        authenticationToken: stampPassProperties.authenticationToken,
+        webServiceURL: process.env.WEB_SERVICE_URL,
+        ...
+      }
+    );
+    ...
+  }</code></pre>
+
+        <p>Once these parameters are set, Apple Wallet will automatically attempt to register the device with your web service when the user adds the pass. Your server should implement the necessary endpoints to handle this registration process securely.</p>
+
+        <p>The endpoint that the device will call to register is:</p>
+
+        <pre><code class="language-javascript">POST https://yourpasshost/v1/devices/{deviceLibraryIdentifier}/registrations/{passTypeIdentifier}/{serialNumber}</code></pre>
+
+        <p>Your server should authenticate every request using the <strong>authenticationToken</strong> provided in the Authorization header:</p>
+        <pre><code class="language-javascript">ApplePass {authenticationToken}    </code></pre>
+
+        <h4>2. Database Structure</h4>
+        <p>Apple recommends using a relational database to store device and pass information. Here's the recommended schema:</p>
+
+        <h5>Device Table</h5>
+        <p>Stores information about devices that contain updatable passes.</p>
+
+        <table>
+          <tr>
+            <th>Attribute</th>
+            <th>Type</th>
+            <th>Description</th>
+          </tr>
+          <tr>
+            <td>id</td>
+            <td><code>int</code></td>
+            <td>Primary key</td>
+          </tr>
+          <tr>
+            <td>deviceLibraryIdentifier</td>
+            <td><code>string</code></td>
+            <td>Unique ID to identify and authenticate a device</td>
+          </tr>
+          <tr>
+            <td>pushToken</td>
+            <td><code>string</code></td>
+            <td>Push token used to send update notifications to the device</td>
+          </tr>
+        </table>
+
+        <h5>Pass Table</h5>
+        <p>Stores information about updatable passes.</p>
+
+        <table>
+          <tr>
+            <th>Attribute</th>
+            <th>Type</th>
+            <th>Description</th>
+          </tr>
+          <tr>
+            <td>id</td>
+            <td><code>int</code></td>
+            <td>Primary key</td>
+          </tr>
+          <tr>
+            <td>passTypeIdentifier</td>
+            <td><code>string</code></td>
+            <td>Your pass type identifier</td>
+          </tr>
+          <tr>
+            <td>serialNumber</td>
+            <td><code>string</code></td>
+            <td>Unique identifier for the pass</td>
+          </tr>
+          <tr>
+            <td>lastUpdateTag</td>
+            <td><code>date</code></td>
+            <td>Timestamp of the last pass update</td>
+          </tr>
+        </table>
+
+        <h5>Registration Table</h5>
+        <p>Manages the many-to-many relationship between devices and passes.</p>
+
+        <table>
+          <tr>
+            <th>Attribute</th>
+            <th>Type</th>
+            <th>Description</th>
+          </tr>
+          <tr>
+            <td>id</td>
+            <td><code>int</code></td>
+            <td>Primary key</td>
+          </tr>
+          <tr>
+            <td>deviceId</td>
+            <td><code>int</code></td>
+            <td>Foreign key referencing the Device table</td>
+          </tr>
+          <tr>
+            <td>passId</td>
+            <td><code>int</code></td>
+            <td>Foreign key referencing the Pass table</td>
+          </tr>
+        </table>
+
+        <h4>3. Device Registration Process</h4>
+        <p>When a device attempts to register, your server should:</p>
+
+        <ol>
+          <li>Authenticate the request using the provided <code>authenticationToken</code></li>
+          <li>Find or create the device record using the <code>deviceLibraryIdentifier</code> and <code>pushToken</code></li>
+          <li>Find or create the pass record using the <code>passTypeIdentifier</code> and <code>serialNumber</code></li>
+          <li>Find or create the registration relationship between the device and pass</li>
+          <li>Return appropriate status codes:
+            <ul>
+              <li><code>200</code>: Pass already registered</li>
+              <li><code>201</code>: Registration successful</li>
+              <li><code>401</code>: Unauthorized request</li>
+            </ul>
+          </li>
+        </ol>
+
+        <p>Here's an example implementation using Next.js:</p>
+
+        <pre><code class="language-javascript">export const POST = async (request: NextRequest, { params }: { params: PathParams }): Promise<Response> => {
+  const { deviceLibraryIdentifier, passTypeIdentifier, serialNumber } = params;
+  const { pushToken } = await request.json();
+  const authHeader = request.headers.get("Authorization");
+
+  if (authHeader !== `ApplePass ${process.env.AUTH_TOKEN}`) {
+    return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
+  }
+
+  try {
+    // Find or create device
+    const device = await Devices.findOrCreate({
+      deviceLibraryIdentifier,
+      pushToken
+    });
+
+    // Find or create pass
+    const pass = await Passes.findOrCreate({
+      passTypeIdentifier,
+      serialNumber
+    });
+
+    // Create registration if it doesn't exist
+    const registration = await Registrations.findOrCreate({
+      deviceId: device.id,
+      passId: pass.id
+    });
+
+    return NextResponse.json(
+      { message: registration.isNew ? "Registration created" : "Registration exists" },
+      { status: registration.isNew ? 201 : 200 }
+    );
+  } catch (error) {
+    return NextResponse.json(
+      { message: "Internal Server Error" },
+      { status: 500 }
+    );
+  }
+};</code></pre>
+
+        <h4>4. Pass Update Process</h4>
+        <p>To update passes, implement the following endpoint:</p>
+
+        <pre><code class="language-javascript">GET https://yourpasshost/v1/passes/{passTypeIdentifier}/{serialNumber}</code></pre>
+
+        <p>This endpoint should:</p>
+        <ol>
+          <li>Authenticate the request</li>
+          <li>Generate or retrieve the updated pass
+            <ul>
+              <li>You have two options for handling pass updates:
+                <ol>
+                  <li>Generate the updated pass directly in this endpoint</li>
+                  <li>Generate the pass elsewhere in your application and store it (e.g., in a cloud storage service)</li>
+                </ol>
+              </li>
+              <li>The example below demonstrates the second approach, where we retrieve a pre-generated pass from storage</li>
+            </ul>
+          </li>
+          <li>Return the pass file with appropriate headers</li>
+        </ol>
+
+        <p>Example implementation:</p>
+
+        <pre><code class="language-javascript">export const GET = async (request: NextRequest, { params }: { params: PathParams }): Promise<Response> => {
+  const { serialNumber } = params;
+  const authHeader = request.headers.get("Authorization");
+
+  if (authHeader !== `ApplePass ${process.env.AUTH_TOKEN}`) {
+    return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
+  }
+
+  try {
+    // Retrieve the pass record from the database
+    const pass = await Passes.find(serialNumber);
+    
+    // Fetch the pre-generated pass file from storage
+    // In this example, we assume the pass is stored at a URL
+    const passBuffer = await fetch(pass.url).then(res => res.arrayBuffer());
+
+    // Convert the downloaded ArrayBuffer to a Buffer and send it to the client
+    return new Response(Buffer.from(passBuffer), {
+      status: 200,
+      headers: {
+        "Content-Type": "application/vnd.apple.pkpass",
+        "Content-Disposition": `attachment; filename="${serialNumber}.pkpass"`
+      }
+    });
+  } catch (error) {
+    return NextResponse.json(
+      { message: "Internal Server Error" },
+      { status: 500 }
+    );
+  }
+};</code></pre>
+
+        <h4>5. Device Unregistration</h4>
+        <p>When a user removes a pass from their device, implement this endpoint:</p>
+
+        <pre><code class="language-javascript">DELETE https://yourpasshost/v1/devices/{deviceLibraryIdentifier}/registrations/{passTypeIdentifier}/{serialNumber}</code></pre>
+
+        <p>This endpoint should:</p>
+        <ol>
+          <li>Authenticate the request</li>
+          <li>Remove the registration</li>
+          <li>Delete the device records if the registration is not found</li>
+          <li>Return appropriate status codes</li>
+        </ol>
+
+        <p>Example implementation:</p>
+
+        <pre><code class="language-javascript">export const DELETE = async (request: NextRequest, { params }: { params: PathParams }): Promise<Response> => {
+  const { deviceLibraryIdentifier, serialNumber } = params;
+  const authHeader = request.headers.get("Authorization");
+
+  if (authHeader !== `ApplePass ${process.env.AUTH_TOKEN}`) {
+    return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
+  }
+
+  try {
+    // First try to find and delete the registration
+    try {
+      const registration = await Registrations.find(deviceLibraryIdentifier, serialNumber);
+      await Registrations.delete(registration.id);
+      return NextResponse.json({ message: "Registration deleted successfully" }, { status: 200 });
+    } catch (error) {
+      if (error instanceof RecordNotFoundError) {
+        // If registration not found, try to delete the device
+        try {
+          const device = await Devices.find(deviceLibraryIdentifier);
+          await Devices.delete(device.id);
+          return NextResponse.json({ message: "Device deleted successfully" }, { status: 200 });
+        } catch (deviceError) {
+          if (deviceError instanceof RecordNotFoundError) {
+            return NextResponse.json({ message: "No registration or device found" }, { status: 200 });
+          }
+          throw deviceError;
+        }
+      }
+      throw error;
+    }
+  } catch (error) {
+    return NextResponse.json(
+      { message: "Internal Server Error" },
+      { status: 500 }
+    );
+  }
+};</code></pre>
+
+        <h4>6. Automatic Pass Updates</h4>
+        <p>By default, users need to manually request pass updates by performing a pull-down gesture on their iOS devices. To enable automatic updates, you need to implement push notifications using Apple's Push Notification Service (APNs). This process involves:</p>
+
+        <ol>
+          <li>Sending a push notification to the user's device via APNs</li>
+          <li>The device then requests the list of updatable passes from your server</li>
+          <li>The device request each pass update</li>
+          <li>Your server provides the updated version for each pass</li>
+        </ol>
+
+        <p>To implement this, you'll need to establish a connection with APNs using either certificate-based or token-based authentication. This guide demonstrates the token-based approach, which is recommended for modern applications.</p>
+
+        <h5>6.1 Establishing APNs Connection</h5>
+        <p>To establish a token-based connection with APNs, you need to create a private key in your Apple Developer account:</p>
+
+        <ol>
+          <li>Go to Certificates, Identifiers & Profiles</li>
+          <li>Click Keys in the sidebar</li>
+          <li>Click the add button <strong>(+)</strong> in the top left</li>
+          <li>Enter a unique name for the key</li>
+          <li>Select the checkbox next to "Apple Push Notification service"</li>
+          <li>Click Continue</li>
+          <li>Configure APNs:
+            <ul>
+              <li>Click Configure next to "Apple Push Notification service"</li>
+              <li>Choose the environment (Development or Production)</li>
+              <li>Select the key type (Team Scoped or Topic Specific)</li>
+              <li>For Topic Specific keys, select the associated topics</li>
+            </ul>
+          </li>
+          <li>Review and confirm the configuration</li>
+          <li>Download the key file (<code>.p8</code> extension)</li>
+        </ol>
+
+        <p><strong>Important</strong>: Save both the Key ID (10-character string) and the <code>.p8</code> file securely. You won't be able to download the key again, and you'll need both for authentication.</p>
+
+        <h5>6.2 Creating and Encrypting JSON Token</h5>
+        <p>When sending requests to APNs, you need to sign your token data as a JWT using your private key. The token must include:</p>
+
+        <table>
+          <tr>
+            <th>Key</th>
+            <th>Value</th>
+            <th>Description</th>
+          </tr>
+          <tr>
+            <td><code>alg</code></td>
+            <td><code>ES256</code></td>
+            <td>The encryption algorithm (APNs only supports ES256)</td>
+          </tr>
+          <tr>
+            <td><code>kid</code></td>
+            <td><code>string</code></td>
+            <td>Your 10-character Key ID from Apple Developer account</td>
+          </tr>
+          <tr>
+            <td><code>iss</code></td>
+            <td><code>string</code></td>
+            <td>Your 10-character Team ID used for pass creation</td>
+          </tr>
+          <tr>
+            <td><code>iat</code></td>
+            <td><code>number</code></td>
+            <td>Unix timestamp (seconds) when the token was generated</td>
+          </tr>
+        </table>
+
+        <p>The token is divided into:</p>
+        <ul>
+          <li>Header: Contains <code>alg</code> and <code>kid</code></li>
+          <li>Claims: Contains <code>iss</code> and <code>iat</code></li>
+        </ul>
+
+        <p><strong>Note</strong>: APNs will reject tokens older than one hour, returning an <strong>ExpiredProviderToken (403)</strong> error.</p>
+
+        <p>After encrypting your resulting JSON you attach the token to your notification request header:</p>
+        <pre><code class="language-javascript">authorization = bearer eyAia2lkIjogIjhZTDNHM1JSWDciIH0.eyAiaXNzIjogIkM4Nk5WOUpYM0QiLCAiaWF0IjogIjE0NTkxNDM1ODA2NTAiIH0.MEYCIQDzqyahmH1rz1s-LFNkylXEa2lZ_aOCX4daxxTZkVEGzwIhALvkClnx5m5eAT6Lxw7LZtEQcH6JENhJTMArwLf3sXwi</code></pre>
+
+        <h5>6.3 Sending Push Notifications</h5>
+        <p>When sending notifications to APNs, you need to include specific headers:</p>
+
+        <table>
+          <tr>
+            <th>Header field</th>
+            <th>Required</th>
+            <th>Description</th>
+          </tr>
+          <tr>
+            <td><code>:method</code></td>
+            <td>Yes</td>
+            <td>Must be <code>POST</code></td>
+          </tr>
+          <tr>
+            <td><code>:path</code></td>
+            <td>Yes</td>
+            <td><code>/3/device/&lt;device_token&gt;</code></td>
+          </tr>
+          <tr>
+            <td><code>authorization</code></td>
+            <td>Yes</td>
+            <td><code>bearer &lt;provider_token&gt;</code></td>
+          </tr>
+          <tr>
+            <td><code>apns-push-type</code></td>
+            <td>Yes*</td>
+            <td>Must match notification payload</td>
+          </tr>
+          <tr>
+            <td><code>apns-id</code></td>
+            <td>No</td>
+            <td>UUID for notification tracking</td>
+          </tr>
+          <tr>
+            <td><code>apns-expiration</code></td>
+            <td>No</td>
+            <td>Unix timestamp for notification validity</td>
+          </tr>
+          <tr>
+            <td><code>apns-priority</code></td>
+            <td>No</td>
+            <td>Notification priority (1, 5, or 10)</td>
+          </tr>
+          <tr>
+            <td><code>apns-topic</code></td>
+            <td>Yes</td>
+            <td>For pass notifications, this must be your <code>passTypeIdentifier</code> (e.g., <code>pass.com.example.app</code>)</td>
+          </tr>
+          <tr>
+            <td><code>apns-collapse-id</code></td>
+            <td>No</td>
+            <td>ID for merging multiple notifications</td>
+          </tr>
+        </table>
+
+        <p>*Required for watchOS 6+, recommended for other platforms</p>
+
+        <p>Here's an example implementation:</p>
+
+        <pre><code class="language-javascript">const fs = require("fs");
+const http2 = require("http2");
+const jwt = require("jsonwebtoken");
+
+async function sendApplePushNotification(deviceToken, payload = {}) { // Empty payload, as necessary (see apple documentation)
+  // Create JWT token
+  const tokenData = {
+    header: {
+      alg: "ES256",
+      kid: process.env.APPLE_KEY_ID,
+    },
+    payload: {
+      iss: process.env.APPLE_TEAM_ID,
+      iat: Math.floor(Date.now() / 1000), // EPOCH time
+    },
+  };
+
+  // Load certificates and private key
+  const privateKey = fs.readFileSync("./.certificates/AuthKey_ABC123DEF1.p8");
+  const options = {
+    cert: fs.readFileSync("./.certificates/signerCert.pem"),
+    key: fs.readFileSync("./.certificates/signerKey.pem"),
+    ca: fs.readFileSync("./.certificates/wwdr.pem"),
+    passphrase: process.env.PASS_PHRASE,
+  };
+
+  // Sign the token
+  const encodedToken = jwt.sign(tokenData.payload, privateKey, {
+    algorithm: "ES256",
+    header: tokenData.header,
+  });
+
+  // Set up request headers
+  const headers = {
+    ":method": "POST",
+    ":path": `/3/device/${deviceToken}`,
+    authorization: `bearer ${encodedToken}`,
+    "apns-push-type": "background",
+    "apns-expiration": "0",
+    "apns-priority": "10",
+    "apns-topic": process.env.PASS_TYPE_IDENTIFIER, // Must match the passTypeIdentifier used when creating the pass
+    "Content-Type": "application/json",
+  };
+
+  // Create HTTP/2 client
+  const client = http2.connect("https://api.push.apple.com");
+
+  // Handle connection errors
+  client.on("error", (error) => {
+    console.error("Client connection error:", error);
+  });
+
+  // Wait for connection
+  const connectPromise = new Promise((resolve, reject) => {
+    client.on("connect", resolve);
+    client.on("error", reject);
+  });
+
+  await connectPromise;
+
+  // Send request
+  const req = client.request(headers, options);
+  req.setEncoding("utf8");
+  req.write(JSON.stringify(payload));
+  req.end();
+
+  // Handle response
+  const responsePromise = new Promise((resolve, reject) => {
+    req.on("response", resolve);
+    req.on("data", () => {});
+    req.on("end", () => client.close());
+    req.on("error", (error) => {
+      console.error("Request error:", error);
+      reject(error);
+    });
+
+    // Set timeout
+    req.setTimeout(10000, () => {
+      console.error("Request timed out");
+      req.close();
+      reject(new Error("Request timed out"));
+    });
+
+    // Handle socket events
+    req.on("socket", (socket) => {
+      socket.on("timeout", () => {
+        console.error("Socket timeout");
+        req.close();
+        reject(new Error("Socket timeout"));
+      });
+      socket.on("error", (error) => {
+        console.error("Socket error:", error);
+        reject(error);
+      });
+      socket.on("close", () => {});
+    });
+  });
+
+  await responsePromise;
+  client.on("close", () => {});
+}</code></pre>
+
+        <h5>6.4 Getting List of Updatable Passes</h5>
+        <p>After APNs delivers the push notification, the device will request a list of passes that need updating. Implement this endpoint:</p>
+
+        <pre><code class="language-javascript">GET https://yourpasshost.example.com/v1/devices/{deviceLibraryIdentifier}/registrations/{passTypeIdentifier}?passesUpdatedSince={previousLastUpdated}</code></pre>
+
+        <p>The endpoint should:</p>
+        <ol>
+          <li>Authenticate the request</li>
+          <li>Find passes registered for the device</li>
+          <li>Filter passes updated since <code>previousLastUpdated</code></li>
+          <li>Return an array of <strong>serialNumbers</strong> and the most recent <strong>lastUpdated</strong> timestamp</li>
+          <li>Return <strong>204</strong> if no updates are available</li>
+        </ol>
+
+        <p>Example implementation:</p>
+
+        <pre><code class="language-javascript">export const GET = async (request: NextRequest, { params }: { params: PathParams }): Promise<Response> => {
+  const { deviceLibraryIdentifier, passTypeIdentifier } = params;
+  const authHeader = request.headers.get("Authorization");
+  const passesUpdatedSince = request.nextUrl.searchParams.get("passesUpdatedSince");
+
+  if (authHeader !== `ApplePass ${process.env.AUTH_TOKEN}`) {
+    return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
+  }
+
+  try {
+    // Find passes for the device
+    const passes = await Passes.find(deviceLibraryIdentifier, passTypeIdentifier);
+    
+    // Get serial numbers and latest update time
+    const serialNumbers = passes.map(pass => pass.serialNumber);
+    const lastUpdated = Math.max(...passes.map(pass => 
+      new Date(pass.lastUpdateTag).getTime() / 1000
+    ));
+
+    // Check if updates are needed
+    if (passesUpdatedSince) {
+      const previousUpdate = new Date(passesUpdatedSince).getTime() / 1000;
+      if (lastUpdated <= previousUpdate) {
+        return new NextResponse(null, { status: 204 });
+      }
+    }
+
+    // Return updated passes
+    return NextResponse.json({
+      serialNumbers,
+      lastUpdated: lastUpdated.toString()
+    }, { status: 200 });
+  } catch (error) {
+    return NextResponse.json(
+      { message: "Internal Server Error" },
+      { status: 500 }
+    );
+  }
+};</code></pre>
+      </section>
+
+      <section id="conclusion">
+        <h2>Conclusion</h2>
+        <p>Building a web service for Apple Wallet passes is a complex but rewarding endeavor. While the initial setup requires careful attention to certificates, endpoints, and push notifications, the end result provides a seamless experience for your users.</p>
+
+        <p>The most challenging aspects of this implementation are:</p>
+        <ul>
+          <li>Managing device registrations and updates</li>
+          <li>Handling push notifications reliably</li>
+          <li>Maintaining security across all endpoints</li>
+        </ul>
+
+        <p>However, once implemented, you'll have a robust system that can handle various types of passes, from loyalty cards to event tickets, with real-time updates and automatic synchronization.</p>
+
+        <p>Remember to stay updated with Apple's documentation and test your implementation regularly across different iOS versions. The effort you put into building this system will pay off in the form of enhanced user engagement and satisfaction.</p>
+
+        <hr>
+
+        <p><em>Note: This article is based on the author's experience and research. For the most up-to-date information, always refer to the official Apple documentation.</em></p>
+      </section>
+    </article>
+  </main>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.24.1/prism.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.24.1/plugins/toolbar/prism-toolbar.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.24.1/components/prism-javascript.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.24.1/components/prism-json.min.js"></script>
+  <script src="script.js"></script>
+</body>
+
+</html>

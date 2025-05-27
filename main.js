@@ -1,4 +1,4 @@
-require("dotenv").config();
+require('dotenv').config({ path: '.env.local' });
 const { LoyaltyPass } = require("./loyaltyPass");
 const { StampPass } = require("./stampPass");
 

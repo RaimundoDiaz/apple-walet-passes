@@ -2,6 +2,8 @@
 
 A comprehensive guide and implementation for creating and managing Apple Wallet passes using Node.js. This project demonstrates how to build a web service that handles pass creation, distribution, and automatic updates.
 
+For the Google Wallet implementation, check out the companion repository: [Google Wallet Passes](https://github.com/RaimundoDiaz/google-wallet-passes)
+
 ## Features
 
 - Pass creation and customization

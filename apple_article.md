@@ -548,9 +548,7 @@ By default, users need to manually request pass updates by performing a pull-dow
 3. The device request each pass update
 4. Your server provides the updated version for each pass
 
-To implement this, you'll need to establish a connection with APNs using either 
-certificate-based or token-based authentication. This guide demonstrates the token-based 
-approach, which is recommended for modern applications.
+To implement this, you'll need to establish a connection with APNs using either certificate-based or token-based authentication. This guide demonstrates the token-based approach, which is recommended for modern applications.
 
 ###### 6.1 Establishing APNs Connection
 
